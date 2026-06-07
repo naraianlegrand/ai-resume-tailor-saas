@@ -1,6 +1,10 @@
 """FastAPI application entrypoint and HTTP controllers."""
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import logging
+import sys
 from typing import Dict
 
 from fastapi import FastAPI, HTTPException, status, UploadFile, File, Form
@@ -12,10 +16,7 @@ from app.services.llm_service import LLMService
 from app.services.parser_service import ParserService
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
@@ -128,6 +129,11 @@ async def tailor_resume(
             str(exc),
             exc_info=True
         )
+        if provider == "gemini":
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Gemini Error: {str(exc)}"
+            )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred during resume tailoring processing."
