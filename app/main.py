@@ -2,11 +2,14 @@
 
 import logging
 from typing import Dict
-from fastapi import FastAPI, HTTPException, status
+
+from fastapi import FastAPI, HTTPException, status, UploadFile, File, Form
+
 from mangum import Mangum
 
-from app.models.llm import GenerateRequest, GenerateResponse
+from app.models.llm import GenerateRequest, GenerateResponse, TailorResponse
 from app.services.llm_service import LLMService
+from app.services.parser_service import ParserService
 
 # Configure logging
 logging.basicConfig(
@@ -71,6 +74,66 @@ async def generate_text(request: GenerateRequest) -> GenerateResponse:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while communicating with the LLM provider."
         )
+
+
+@app.post("/api/v1/tailor", response_model=TailorResponse, status_code=status.HTTP_200_OK)
+async def tailor_resume(
+    file: UploadFile = File(..., description="The PDF resume file to tailor"),
+    job_description: str = Form(..., description="Target job description text"),
+    provider: str = Form("mock", description="LLM provider: 'mock', 'openai', or 'gemini'")
+) -> TailorResponse:
+    """Extracts text from a PDF resume and tailors it to match a job description.
+
+    Args:
+        file: Uploaded PDF resume.
+        job_description: Target job description.
+        provider: Selected LLM provider.
+
+    Returns:
+        TailorResponse with ATS score, missing keywords, and tailored bullet points.
+
+    Raises:
+        HTTPException: 400 if PDF parsing or provider fails, 500 on internal error.
+    """
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file format. Only PDF files are supported."
+        )
+
+    try:
+        # Read the file bytes
+        file_bytes = await file.read()
+
+        # Extract text from the PDF
+        resume_text = ParserService.extract_text_from_pdf(file_bytes)
+
+        # Call LLM service to analyze and tailor the resume
+        llm_service = LLMService(provider=provider)
+        tailoring_result = await llm_service.tailor_resume(
+            resume_text=resume_text,
+            job_description=job_description
+        )
+        return tailoring_result
+
+    except ValueError as val_err:
+        logger.warning("Value error during resume tailoring: %s", str(val_err))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(val_err)
+        )
+    except Exception as exc:
+        logger.error(
+            "Unhandled error during resume tailoring: %s",
+            str(exc),
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred during resume tailoring processing."
+        )
+    finally:
+        await file.close()
 
 
 # AWS Lambda Handler

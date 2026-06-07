@@ -1,11 +1,14 @@
 """Service module for LLM providers."""
 
+import json
 import logging
 from typing import Optional
 
-# We will import these here to ensure the packages compile correctly during local validation.
 import openai
 from google import genai
+from google.genai import types
+
+from app.models.llm import TailorResponse
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +28,7 @@ class LLMService:
         logger.info("Initializing LLMService with provider: %s", self.provider)
 
     async def generate_text(self, prompt: str, system_instruction: Optional[str] = None) -> str:
-        """Generates text based on a prompt and optional system instructions.
+        """Generates text based on a prompt and optional system instructions (legacy method).
 
         Args:
             prompt: The user prompt to generate text for.
@@ -43,30 +46,131 @@ class LLMService:
                 return f"[Mock LLM Response] Prompt: {prompt}"
 
             elif self.provider == "openai":
-                # Mocked OpenAI implementation for initial scaffold, showcasing the SDK usage structure
-                logger.info("Mocking OpenAI generation request")
-                # In the future:
-                # client = openai.OpenAI(api_key=self.api_key)
-                # response = client.chat.completions.create(...)
-                return f"[Mocked OpenAI Response] Prompt: {prompt}"
+                client = openai.OpenAI(api_key=self.api_key)
+                messages = []
+                if system_instruction:
+                    messages.append({"role": "system", "content": system_instruction})
+                messages.append({"role": "user", "content": prompt})
+
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=messages
+                )
+                return response.choices[0].message.content or ""
 
             elif self.provider == "gemini":
-                # Mocked Gemini implementation for initial scaffold, showcasing the SDK usage structure
-                logger.info("Mocking Gemini generation request")
-                # In the future:
-                # client = genai.Client(api_key=self.api_key)
-                # response = client.models.generate_content(...)
-                return f"[Mocked Gemini Response] Prompt: {prompt}"
+                client = genai.Client(api_key=self.api_key)
+                config = None
+                if system_instruction:
+                    config = types.GenerateContentConfig(system_instruction=system_instruction)
+
+                response = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=prompt,
+                    config=config
+                )
+                return response.text or ""
+
+            else:
+                raise ValueError(f"Unsupported LLM provider: {self.provider}")
+
+        except Exception as exc:
+            logger.error(
+                "Error generating text with provider %s: %s",
+                self.provider,
+                str(exc),
+                exc_info=True
+            )
+            raise exc
+
+    async def tailor_resume(self, resume_text: str, job_description: str) -> TailorResponse:
+        """Analyzes a resume against a job description using structured LLM outputs.
+
+        Args:
+            resume_text: Raw text of the candidate's resume.
+            job_description: Target job description.
+
+        Returns:
+            TailorResponse containing ATS score, missing keywords, and tailored bullet points.
+
+        Raises:
+            ValueError: If an unsupported provider is specified.
+            Exception: For errors during API execution or parsing.
+        """
+        system_prompt = (
+            "You are an expert ATS (Applicant Tracking System) optimizer and professional resume writer.\n"
+            "Your task is to analyze the candidate's resume text against the provided job description and perform the following:\n"
+            "1. Calculate a simulated ATS match score (0 to 100) based on alignment of skills, experience, and keywords.\n"
+            "2. Identify missing critical keywords and skills that are present in the job description but absent or underrepresented in the resume.\n"
+            "3. Write exactly three tailored, high-impact bullet points for the resume that integrate the missing keywords naturally and align perfectly with the job description. Each bullet point must follow the STAR methodology (Situation, Task, Action, Result) or Google's X-Y-Z formula (Accomplished [X] as measured by [Y], by doing [Z]).\n"
+            "\n"
+            "You must return the result in a valid JSON object matching the requested schema."
+        )
+
+        user_prompt = (
+            f"Resume Text:\n{resume_text}\n\n"
+            f"Job Description:\n{job_description}"
+        )
+
+        try:
+            if self.provider == "mock":
+                # Mocked structured response
+                logger.info("Generating mock structured resume tailoring response")
+                return TailorResponse(
+                    match_score=75,
+                    missing_keywords=["AWS Lambda", "FastAPI", "Serverless Architecture"],
+                    tailored_bullet_points=[
+                        "Designed and deployed a high-scale serverless API using FastAPI and AWS Lambda, reducing endpoint latency by 35%.",
+                        "Implemented strict Pydantic schemas and input validation, decreasing runtime payload errors by 50% across 3 major services.",
+                        "Integrated OpenAI and Google GenAI SDKs into existing Python applications, enabling automated content moderation at scale."
+                    ]
+                )
+
+            elif self.provider == "openai":
+                logger.info("Executing OpenAI structured output API request")
+                client = openai.OpenAI(api_key=self.api_key)
+                response = client.beta.chat.completions.parse(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    response_format=TailorResponse
+                )
+                parsed = response.choices[0].message.parsed
+                if not parsed:
+                    raise ValueError("Failed to parse structured output from OpenAI.")
+                return parsed
+
+            elif self.provider == "gemini":
+                logger.info("Executing Gemini structured output API request")
+                client = genai.Client(api_key=self.api_key)
+                response = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=user_prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_prompt,
+                        response_mime_type="application/json",
+                        response_schema=TailorResponse,
+                    ),
+                )
+
+                # Parse Gemini JSON response into Pydantic model
+                if not response.text:
+                    raise ValueError("Empty response received from Gemini.")
+
+                parsed_data = json.loads(response.text)
+                return TailorResponse(**parsed_data)
 
             else:
                 raise ValueError(f"Unsupported LLM provider: {self.provider}")
 
         except ValueError as val_err:
-            logger.warning("Configuration or value error in LLMService: %s", str(val_err))
+            logger.warning("Validation or setup error in LLMService: %s", str(val_err))
             raise val_err
         except Exception as exc:
             logger.error(
-                "Error generating text with provider %s: %s",
+                "Error tailoring resume with provider %s: %s",
                 self.provider,
                 str(exc),
                 exc_info=True
