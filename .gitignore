@@ -1,0 +1,11 @@
+# Python environments
+__pycache__/
+*.pyc
+.venv/
+env/
+
+# Environment variables / Secrets
+.env
+
+# IDE and Agent metadata to keep clean
+.antigravity/

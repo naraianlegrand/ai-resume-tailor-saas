@@ -1,0 +1,14 @@
+# Use the official AWS Lambda Python base image for Python 3.12
+FROM public.ecr.aws/lambda/python:3.12
+
+# Copy requirements.txt file to the Lambda task root
+COPY requirements.txt ${LAMBDA_TASK_ROOT}
+
+# Install the dependencies directly in the container environment
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the app package to the Lambda task root
+COPY app/ ${LAMBDA_TASK_ROOT}/app
+
+# Set the CMD to the handler inside main.py
+CMD [ "app.main.handler" ]
