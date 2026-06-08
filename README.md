@@ -30,6 +30,7 @@ This design choice completely bypassed the filesystem write bottleneck, eliminat
 ## Live Output Showcase (The Reality Check)
 
 Below is an authentic end-to-end transaction captured directly from the live FastAPI local server endpoint (`POST /api/v1/tailor`), testing a Software Engineering background against a real-world Automation/Telecommunications Internship description in Montreal (requiring heavy industrial automation like SCADA, PLCs, and AutoCAD). 
+<img width="1818" height="745" alt="Demo of the Result" src="demo.png" />
 
 ### Sample Target Job Description Input:
 > *"Within the Telecommunications team, as an Intern, your responsibilities include supporting the programming of programmable logic controllers (RTU, PLC, etc.), participating in the design of centralized control centers for SCADA management systems, and preparing drawings in AutoCAD..."*
